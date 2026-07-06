@@ -25,7 +25,7 @@ page        db 0
 spell_row   db 0
 spell_col   db 0
 sp_tmp      dd 0
-NFIELDS     equ 22
+NFIELDS     equ 24
 VIS_FIELDS  equ 20
 BOX_L       equ 20
 BOX_W       equ 40
@@ -35,15 +35,24 @@ NAME_COL    equ 23
 VAL_COL     equ 49
 SPELL_ROW   equ 5
 SPELL_COL   equ 23
-fld_off:    dw 0x7A8, 0x031, 0x033
-            dw 0x812, 0x814, 0x816, 0x818, 0x81A, 0x81C
-            dw 0x454, 0x458, 0x45C, 0x460, 0x464, 0x468, 0x46C, 0x470
-            dw 0x7AC, 0x7AE, 0x806
-            dw 0x035, 0x039
-fld_sz:     db 2,2,2, 2,2,2,2,2,2, 4,4,4,4,4,4,4,4, 2,2,2, 5,5
+RAISE_IDX   equ 21
+fld_off:    dw 0x7A8              ; 0  Level
+            dw 0x031, 0x033       ; 1-2  HP Cur/Max
+            dw 0x035, 0x039       ; 3-4  SP Cur/Max (float32)
+            dw 0x7D6              ; 5  Age
+            dw 0x812, 0x814, 0x816, 0x818, 0x81A, 0x81C  ; 6-11 Stats
+            dw 0x454, 0x458       ; 12-13 Jewels Pocket/Bank
+            dw 0x45C, 0x460, 0x464, 0x468, 0x46C, 0x470  ; 14-19 Stones
+            dw 0x7AC, 0x7AE       ; 20 X/Y Position
+            dw 0x806              ; 21 Raise Contract
+            dw 0x7D0              ; 22 Armor Enchant
+fld_sz:     db 2, 2,2, 5,5, 4, 2,2,2,2,2,2, 4,4, 4,4,4,4,4,4, 2,2, 2, 2
 fld_name:   db 'Level         '
             db 'HP Current    '
             db 'HP Max        '
+            db 'SP Current    '
+            db 'SP Maximum    '
+            db 'Age           '
             db 'Strength      '
             db 'Intelligence  '
             db 'Wisdom        '
@@ -61,8 +70,7 @@ fld_name:   db 'Level         '
             db 'X Position    '
             db 'Y Position    '
             db 'Raise Contract'
-            db 'SP Current    '
-            db 'SP Maximum    '
+            db 'Armor Enchant '
 spell_base: dw 0x177, 0x1A4, 0x1D1, 0x1FE
 spell_lbl:  db 'E', 'H', 'A', 'P'
 str_title:  db 0xC9
@@ -537,7 +545,7 @@ draw_fields:
     call putch_adv
     loop .nm_lp
     pop cx
-    cmp byte [fld_idx], 19
+    cmp byte [fld_idx], RAISE_IDX
     je .raise_display
     movzx bx, byte [fld_idx]
     mov al, [fld_sz + bx]
@@ -1080,7 +1088,7 @@ modify_val:
     push ax
     push bx
     push dx
-    cmp byte [cur_sel], 19
+    cmp byte [cur_sel], RAISE_IDX
     jne .normal_modify
     movzx bx, byte [cur_sel]
     shl bx, 1
