@@ -25,6 +25,14 @@ page        db 0
 spell_row   db 0
 spell_col   db 0
 sp_tmp      dd 0
+equip_sel   db 0
+EQ_WEP_OWN  equ 0x081
+EQ_WEP_ENCH equ 0x08E
+EQ_ARM_OWN  equ 0x0B0
+EQ_ARM_ENCH equ 0x0B8
+EQ_NAME_COL equ 25
+EQ_OWN_COL  equ 44
+EQ_ENCH_END equ 52
 NFIELDS     equ 24
 VIS_FIELDS  equ 20
 BOX_L       equ 20
@@ -73,6 +81,25 @@ fld_name:   db 'Level         '
             db 'Armor Enchant '
 spell_base: dw 0x177, 0x1A4, 0x1D1, 0x1FE
 spell_lbl:  db 'E', 'H', 'A', 'P'
+wep_name:   db 'Fist        '
+            db 'Stick       '
+            db 'Club        '
+            db 'Mace        '
+            db 'Knife       '
+            db 'Shortsword  '
+            db 'Long Sword  '
+            db 'Great Sword '
+arm_name:   db 'Skin        '
+            db 'Leather     '
+            db 'Chain       '
+            db 'Scale       '
+            db 'Plate       '
+            db 'Field Plate '
+            db 'Titanium    '
+            db 'Ogre        '
+str_whdr:   db ' WEAPONS               OWN  ENCH', 0
+str_ahdr:   db ' ARMOR                 OWN  ENCH', 0
+str_ehelp:  db ' Spc=Own ',1Bh,1Ah,'=Ench ',18h,19h,'=Sel ESC=Back', 0
 str_title:  db 0xC9
             times BOX_W-2 db 0xCD
             db 0xBB, 0
@@ -83,7 +110,7 @@ str_sep:    db 0xCC
             times BOX_W-2 db 0xCD
             db 0xB9, 0
 str_help:   db ' ', 18h,19h, 'Sel ', 1Bh,1Ah, 0xF1,'1 Pg'
-            db 0xF1, '100 #=Set S=Spl ESC', 0
+            db 0xF1, '100 #Set S=Sp E=Eq ESC', 0
 str_shelp:  db ' ', 18h,19h,1Bh,1Ah, 'Nav Spc=Tog A/N=All ESC', 0
 str_nf:     db ' Character not found! Press key', 0
 str_active: db '         Active', 0
@@ -164,6 +191,8 @@ editor_main:
     int 16h
     cmp byte [page], 1
     je .spell_keys
+    cmp byte [page], 2
+    je .equip_keys
     cmp byte [input_mode], 0
     jne .handle_input
     cmp ah, 01h
@@ -172,6 +201,10 @@ editor_main:
     je .goto_spells
     cmp al, 'S'
     je .goto_spells
+    cmp al, 'e'
+    je .goto_equip
+    cmp al, 'E'
+    je .goto_equip
     cmp ah, 48h
     je .up
     cmp ah, 50h
@@ -276,6 +309,52 @@ editor_main:
     mov byte [spell_row], 0
     mov byte [spell_col], 0
     call draw_spell_page
+    jmp .iloop
+.goto_equip:
+    mov byte [page], 2
+    mov byte [equip_sel], 0
+    call draw_equip_page
+    jmp .iloop
+;; ---- Equipment page keys ----
+.equip_keys:
+    cmp ah, 01h
+    je .goto_stats
+    cmp ah, 48h
+    je .equip_up
+    cmp ah, 50h
+    je .equip_down
+    cmp al, ' '
+    je .equip_tog
+    cmp ah, 4Dh
+    je .equip_einc
+    cmp ah, 4Bh
+    je .equip_edec
+    jmp .iloop
+.equip_up:
+    cmp byte [equip_sel], 0
+    je .iloop
+    dec byte [equip_sel]
+    call draw_equip_items
+    jmp .iloop
+.equip_down:
+    cmp byte [equip_sel], 15
+    jae .iloop
+    inc byte [equip_sel]
+    call draw_equip_items
+    jmp .iloop
+.equip_tog:
+    call do_equip_toggle
+    call draw_equip_items
+    jmp .iloop
+.equip_einc:
+    mov cx, 1
+    call modify_equip_ench
+    call draw_equip_items
+    jmp .iloop
+.equip_edec:
+    mov cx, -1
+    call modify_equip_ench
+    call draw_equip_items
     jmp .iloop
 ;; ---- Spell page keys ----
 .spell_keys:
@@ -949,6 +1028,312 @@ clear_type_all:
     pop bx
     pop es
     ret
+;; ======================== DRAW EQUIP PAGE ======================
+draw_equip_page:
+    mov ax, 0B800h
+    mov es, ax
+    xor di, di
+    mov ax, 0720h
+    mov cx, 2000
+    rep stosw
+    mov dh, 0
+    mov dl, BOX_L
+    mov bl, 0Bh
+    mov si, str_title
+    call printat
+    call draw_namerow
+    mov dh, 2
+    mov dl, BOX_L
+    mov bl, 0Bh
+    mov si, str_sep
+    call printat
+    ;; Weapon header row 3
+    mov dh, 3
+    mov dl, BOX_L
+    mov al, 0BAh
+    mov bl, 0Bh
+    call putch_at
+    mov dl, BOX_L + BOX_W - 1
+    call putch_at
+    mov dl, BOX_L + 1
+    mov bl, 0Eh
+    mov si, str_whdr
+    call printat
+    ;; Armor header row 12
+    mov dh, 12
+    mov dl, BOX_L
+    mov al, 0BAh
+    mov bl, 0Bh
+    call putch_at
+    mov dl, BOX_L + BOX_W - 1
+    call putch_at
+    mov dl, BOX_L + 1
+    mov bl, 0Eh
+    mov si, str_ahdr
+    call printat
+    ;; Draw items
+    call draw_equip_items
+    ;; Separator row 21
+    mov dh, 21
+    mov dl, BOX_L
+    mov bl, 0Bh
+    mov si, str_sep
+    call printat
+    ;; Help row 22
+    mov dh, 22
+    mov dl, BOX_L
+    mov al, 0BAh
+    mov bl, 0Bh
+    call putch_at
+    mov dl, BOX_L + BOX_W - 1
+    call putch_at
+    mov dl, BOX_L + 1
+    mov bl, 07h
+    mov si, str_ehelp
+    call printat
+    ;; Bottom row 23
+    mov dh, 23
+    mov dl, BOX_L
+    mov bl, 0Bh
+    mov si, str_bottom
+    call printat
+    ret
+;; ======================== DRAW EQUIP ITEMS =====================
+draw_equip_items:
+    pusha
+    push es
+    push ds
+    push cs
+    pop ds
+    mov byte [fld_idx], 0
+.ei_loop:
+    cmp byte [fld_idx], 16
+    jae .ei_done
+    ;; Calculate screen row
+    movzx ax, byte [fld_idx]
+    cmp al, 8
+    jb .ei_wrow
+    add al, 5
+    jmp .ei_setrow
+.ei_wrow:
+    add al, 4
+.ei_setrow:
+    mov dh, al
+    ;; Draw borders
+    mov dl, BOX_L
+    mov al, 0BAh
+    mov bl, 0Bh
+    call putch_at
+    mov dl, BOX_L + BOX_W - 1
+    call putch_at
+    ;; Clear interior
+    push word 0B800h
+    pop es
+    movzx ax, dh
+    imul ax, 80
+    add ax, BOX_L + 1
+    shl ax, 1
+    mov di, ax
+    mov ax, 0720h
+    mov cx, BOX_W - 2
+    rep stosw
+    ;; Arrow if selected
+    mov dl, BOX_L + 1
+    mov al, [fld_idx]
+    cmp al, [equip_sel]
+    jne .ei_no_arr
+    mov al, 1Ah
+    mov bl, 0Eh
+    call putch_at
+    jmp .ei_name
+.ei_no_arr:
+    mov al, ' '
+    mov bl, 07h
+    call putch_at
+.ei_name:
+    ;; Selection color
+    mov al, [fld_idx]
+    cmp al, [equip_sel]
+    jne .ei_dim
+    mov bl, 0Fh
+    jmp .ei_slot
+.ei_dim:
+    mov bl, 07h
+.ei_slot:
+    ;; Slot number (1-8)
+    mov dl, EQ_NAME_COL
+    movzx ax, byte [fld_idx]
+    cmp al, 8
+    jb .ei_sn
+    sub al, 8
+.ei_sn:
+    add al, '1'
+    call putch_at
+    inc dl
+    mov al, '.'
+    call putch_at
+    inc dl
+    ;; Name (12 chars)
+    push bx
+    movzx si, byte [fld_idx]
+    cmp si, 8
+    jb .ei_wn
+    sub si, 8
+    imul si, 12
+    add si, arm_name
+    jmp .ei_pn
+.ei_wn:
+    imul si, 12
+    add si, wep_name
+.ei_pn:
+    pop bx
+    mov cx, 12
+.ei_nlp:
+    lodsb
+    call putch_at
+    inc dl
+    loop .ei_nlp
+    ;; OWN flag
+    mov dl, EQ_OWN_COL
+    movzx bx, byte [fld_idx]
+    cmp bl, 8
+    jb .ei_wo
+    sub bl, 8
+    add bx, EQ_ARM_OWN
+    jmp .ei_ro
+.ei_wo:
+    add bx, EQ_WEP_OWN
+.ei_ro:
+    add bx, [data_off]
+    push es
+    mov es, [data_seg]
+    mov al, [es:bx]
+    pop es
+    test al, al
+    jz .ei_own_n
+    mov al, 'Y'
+    mov bl, 0Ah
+    jmp .ei_own_c
+.ei_own_n:
+    mov al, 'N'
+    mov bl, 08h
+.ei_own_c:
+    push ax
+    mov al, [fld_idx]
+    cmp al, [equip_sel]
+    pop ax
+    jne .ei_own_d
+    mov bl, 0Fh
+.ei_own_d:
+    call putch_at
+    ;; Enchant level
+    movzx bx, byte [fld_idx]
+    cmp bl, 8
+    jb .ei_we
+    sub bl, 8
+    add bx, EQ_ARM_ENCH
+    jmp .ei_re
+.ei_we:
+    add bx, EQ_WEP_ENCH
+.ei_re:
+    add bx, [data_off]
+    push es
+    mov es, [data_seg]
+    movzx ax, byte [es:bx]
+    pop es
+    push dx
+    xor dx, dx
+    mov di, numbuf
+    call u32_to_dec
+    pop dx
+    ;; Right-align the number
+    mov si, numbuf
+    xor bx, bx
+.ei_elen:
+    cmp byte [si+bx], 0
+    je .ei_elen_d
+    inc bx
+    jmp .ei_elen
+.ei_elen_d:
+    mov dl, EQ_ENCH_END
+    sub dl, bl
+    mov si, numbuf
+    mov al, [fld_idx]
+    cmp al, [equip_sel]
+    jne .ei_ed
+    mov bl, 0Fh
+    jmp .ei_ep
+.ei_ed:
+    mov bl, 0Ah
+.ei_ep:
+    call printat
+    ;; Next item
+    inc byte [fld_idx]
+    jmp .ei_loop
+.ei_done:
+    pop ds
+    pop es
+    popa
+    ret
+;; ======================== EQUIP TOGGLE/MODIFY ==================
+do_equip_toggle:
+    push es
+    push bx
+    movzx bx, byte [equip_sel]
+    cmp bl, 8
+    jb .et_wep
+    sub bl, 8
+    add bx, EQ_ARM_OWN
+    jmp .et_do
+.et_wep:
+    add bx, EQ_WEP_OWN
+.et_do:
+    add bx, [data_off]
+    mov es, [data_seg]
+    mov al, [es:bx]
+    test al, al
+    jnz .et_off
+    mov byte [es:bx], 1
+    jmp .et_done
+.et_off:
+    mov byte [es:bx], 0
+.et_done:
+    pop bx
+    pop es
+    ret
+modify_equip_ench:
+    push es
+    push bx
+    push ax
+    movzx bx, byte [equip_sel]
+    cmp bl, 8
+    jb .me_wep
+    sub bl, 8
+    add bx, EQ_ARM_ENCH
+    jmp .me_do
+.me_wep:
+    add bx, EQ_WEP_ENCH
+.me_do:
+    add bx, [data_off]
+    mov es, [data_seg]
+    movzx ax, byte [es:bx]
+    add ax, cx
+    test ax, ax
+    js .me_clamp0
+    cmp ax, 255
+    ja .me_clamp_hi
+    jmp .me_write
+.me_clamp0:
+    xor ax, ax
+    jmp .me_write
+.me_clamp_hi:
+    mov ax, 255
+.me_write:
+    mov [es:bx], al
+    pop ax
+    pop bx
+    pop es
+    ret
 ;; ======================== MEMORY SCANNER =======================
 scan_memory:
     push es
@@ -1450,4 +1835,4 @@ install:
     mov dx, (install - $$ + 0x100 + 15) >> 4
     int 21h
 banner: db 'Moraff Trainer loaded! Press TAB in-game.', 0Dh, 0Ah
-        db '  S=Spells page, A/N=all on/off', 0Dh, 0Ah, '$'
+        db '  S=Spells E=Equipment A/N=all on/off', 0Dh, 0Ah, '$'
