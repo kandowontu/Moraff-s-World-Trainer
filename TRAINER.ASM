@@ -33,7 +33,7 @@ EQ_ARM_ENCH equ 0x0B8
 EQ_NAME_COL equ 25
 EQ_OWN_COL  equ 44
 EQ_ENCH_END equ 52
-NFIELDS     equ 24
+NFIELDS     equ 38
 VIS_FIELDS  equ 20
 BOX_L       equ 20
 BOX_W       equ 40
@@ -43,24 +43,41 @@ NAME_COL    equ 23
 VAL_COL     equ 49
 SPELL_ROW   equ 5
 SPELL_COL   equ 23
-RAISE_IDX   equ 21
+RAISE_IDX   equ 23
 fld_off:    dw 0x7A8              ; 0  Level
             dw 0x031, 0x033       ; 1-2  HP Cur/Max
             dw 0x035, 0x039       ; 3-4  SP Cur/Max (float32)
             dw 0x7D6              ; 5  Age
-            dw 0x812, 0x814, 0x816, 0x818, 0x81A, 0x81C  ; 6-11 Stats
-            dw 0x454, 0x458       ; 12-13 Jewels Pocket/Bank
-            dw 0x45C, 0x460, 0x464, 0x468, 0x46C, 0x470  ; 14-19 Stones
-            dw 0x7AC, 0x7AE       ; 20 X/Y Position
-            dw 0x806              ; 21 Raise Contract
-            dw 0x7D0              ; 22 Armor Enchant
-fld_sz:     db 2, 2,2, 5,5, 4, 2,2,2,2,2,2, 4,4, 4,4,4,4,4,4, 2,2, 2, 2
+            dw 0x7AC, 0x7AE       ; 6-7  X/Y Position
+            dw 0x7B0              ; 8  Floor Depth
+            dw 0x812, 0x814, 0x816, 0x818, 0x81A, 0x81C  ; 9-14 Stats
+            dw 0x454, 0x458       ; 15-16 Jewels Pocket/Bank
+            dw 0x45C, 0x460, 0x464, 0x468, 0x46C, 0x470  ; 17-22 Stones
+            dw 0x806              ; 23 Raise Contract
+            dw 0x7D0              ; 23 Body Armor Lv
+            dw 0x7D2              ; 24 AntiMagic Ring
+            dw 0x846              ; 25 Gauntlet
+            dw 0x7C9              ; 26 Stone of See
+            dw 0x7C8              ; 27 Holy H Grenade
+            dw 0x313              ; 28 Wand Charges
+            dw 0x80E              ; 29 Potion Heal
+            dw 0x810              ; 30 Stone of Telep
+            dw 0x15E              ; 31 Green Pill
+            dw 0x15D              ; 32 Orange Pill
+            dw 0x15F              ; 33 Blue Pill
+            dw 0x160              ; 34 Red Pill
+            dw 0x161              ; 35 White Pill
+            dw 0x162              ; 36 Yellow Pill
+fld_sz:     db 2, 2,2, 5,5, 4, 2,2,2, 2,2,2,2,2,2, 4,4, 4,4,4,4,4,4, 2, 1, 1, 1, 1, 1, 1, 1,1, 1,1,1,1,1, 1
 fld_name:   db 'Level         '
             db 'HP Current    '
             db 'HP Max        '
             db 'SP Current    '
             db 'SP Maximum    '
             db 'Age           '
+            db 'X Position    '
+            db 'Y Position    '
+            db 'Floor Depth   '
             db 'Strength      '
             db 'Intelligence  '
             db 'Wisdom        '
@@ -75,10 +92,21 @@ fld_name:   db 'Level         '
             db 'Gold Stones   '
             db 'Platinum Stone'
             db 'Jewel Stones  '
-            db 'X Position    '
-            db 'Y Position    '
             db 'Raise Contract'
-            db 'Armor Enchant '
+            db 'Body Armor Lv '
+            db 'AntiMagic Ring'
+            db 'Gauntlet      '
+            db 'Stone of See  '
+            db 'Holy H Grenade'
+            db 'Wand Charges  '
+            db 'Potion Heal   '
+            db 'Stone of Telep'
+            db 'Green Pill    '
+            db 'Orange Pill   '
+            db 'Blue Pill     '
+            db 'Red Pill      '
+            db 'White Pill    '
+            db 'Yellow Pill   '
 spell_base: dw 0x177, 0x1A4, 0x1D1, 0x1FE
 spell_lbl:  db 'E', 'H', 'A', 'P'
 wep_name:   db 'Fist        '
@@ -636,7 +664,13 @@ draw_fields:
     je .read_flt
     cmp al, 4
     je .read32
+    cmp al, 1
+    je .read8
     mov ax, [es:di]
+    xor dx, dx
+    jmp .format_num
+.read8:
+    movzx ax, byte [es:di]
     xor dx, dx
     jmp .format_num
 .read32:
@@ -1501,6 +1535,8 @@ modify_val:
     je .mod_flt
     cmp al, 4
     je .mod32
+    cmp al, 1
+    je .mod8
     mov ax, [es:di]
     mov dx, ax
     add ax, cx
@@ -1524,6 +1560,22 @@ modify_val:
 .clamp_max16:
     mov ax, 7FFFh
     jmp .write16
+.mod8:
+    movzx ax, byte [es:di]
+    add ax, cx
+    test ax, ax
+    js .clamp_zero8
+    cmp ax, 255
+    ja .clamp_max8
+.write8:
+    mov [es:di], al
+    jmp .moddone
+.clamp_zero8:
+    xor al, al
+    jmp .write8
+.clamp_max8:
+    mov al, 0FFh
+    jmp .write8
 .mod32:
     mov ax, [es:di]
     mov dx, [es:di+2]
@@ -1719,7 +1771,12 @@ write_field:
     je .wf_flt
     cmp cl, 4
     je .wf32
+    cmp cl, 1
+    je .wf8
     mov [es:di], ax
+    jmp .wf_done
+.wf8:
+    mov [es:di], al
     jmp .wf_done
 .wf32:
     mov [es:di], ax
