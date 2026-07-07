@@ -112,6 +112,11 @@ fld_name:   db 'Level         '
             db 'FS Hit1  042  '
             db 'FS Hit2  81F  '
 spell_base: dw 0x177, 0x1A4, 0x1D1, 0x1FE
+scroll_base:dw 0x22B, 0x258, 0x285, 0x2B2
+wand_base:  dw 0x2DF, 0x30C, 0x339, 0x366
+paper_base: dw 0x393, 0x3C0, 0x3ED, 0x41A
+grid_ptr:   dw spell_base
+grid_is_wand: db 0
 spell_lbl:  db 'E', 'H', 'A', 'P'
 wep_name:   db 'Fist        '
             db 'Stick       '
@@ -141,9 +146,13 @@ str_bottom: db 0xC8
 str_sep:    db 0xCC
             times BOX_W-2 db 0xCD
             db 0xB9, 0
-str_help:   db ' ', 18h,19h, 'Sel ', 1Bh,1Ah, 0xF1,'1 Pg'
-            db 0xF1, '100 #Set S=Sp E=Eq ESC', 0
+str_help:   db ' ', 18h,19h, 'Sel ', 1Bh,1Ah, 0xF1,'1 #Set S/R/W/P/E ESC', 0
 str_shelp:  db ' ', 18h,19h,1Bh,1Ah, 'Nav Spc=Tog A/N=All ESC', 0
+str_whelp:  db ' ', 18h,19h,1Bh,1Ah, 'Nav Spc',0xF1,'1 A/N=All ESC', 0
+str_gtitle: db 'SPELLS  ',0
+            db 'SCROLLS ',0
+            db 'WANDS   ',0
+            db 'PAPERS  ',0
 str_nf:     db ' Character not found! Press key', 0
 str_active: db '         Active', 0
 str_none:   db '           None', 0
@@ -237,6 +246,18 @@ editor_main:
     je .goto_equip
     cmp al, 'E'
     je .goto_equip
+    cmp al, 'r'
+    je .goto_scrolls
+    cmp al, 'R'
+    je .goto_scrolls
+    cmp al, 'w'
+    je .goto_wands
+    cmp al, 'W'
+    je .goto_wands
+    cmp al, 'p'
+    je .goto_papers
+    cmp al, 'P'
+    je .goto_papers
     cmp ah, 48h
     je .up
     cmp ah, 50h
@@ -337,6 +358,8 @@ editor_main:
     call draw_fields
     jmp .iloop
 .goto_spells:
+    mov word [grid_ptr], spell_base
+    mov byte [grid_is_wand], 0
     mov byte [page], 1
     mov byte [spell_row], 0
     mov byte [spell_col], 0
@@ -346,6 +369,30 @@ editor_main:
     mov byte [page], 2
     mov byte [equip_sel], 0
     call draw_equip_page
+    jmp .iloop
+.goto_scrolls:
+    mov word [grid_ptr], scroll_base
+    mov byte [grid_is_wand], 0
+    mov byte [page], 1
+    mov byte [spell_row], 0
+    mov byte [spell_col], 0
+    call draw_spell_page
+    jmp .iloop
+.goto_wands:
+    mov word [grid_ptr], wand_base
+    mov byte [grid_is_wand], 1
+    mov byte [page], 1
+    mov byte [spell_row], 0
+    mov byte [spell_col], 0
+    call draw_spell_page
+    jmp .iloop
+.goto_papers:
+    mov word [grid_ptr], paper_base
+    mov byte [grid_is_wand], 0
+    mov byte [page], 1
+    mov byte [spell_row], 0
+    mov byte [spell_col], 0
+    call draw_spell_page
     jmp .iloop
 ;; ---- Equipment page keys ----
 .equip_keys:
@@ -805,7 +852,7 @@ draw_spell_page:
     mov bl, 0Bh
     mov si, str_sep
     call printat
-    ;; Row 3: SP display
+    ;; Row 3: Grid title
     mov dh, 3
     mov dl, BOX_L
     mov al, 0BAh
@@ -813,54 +860,21 @@ draw_spell_page:
     call putch_at
     mov dl, BOX_L + BOX_W - 1
     call putch_at
+    ;; Find which grid title to show
+    mov si, str_gtitle
+    mov ax, [grid_ptr]
+    cmp ax, spell_base
+    je .gt_ok
+    add si, 9
+    cmp ax, scroll_base
+    je .gt_ok
+    add si, 9
+    cmp ax, wand_base
+    je .gt_ok
+    add si, 9
+.gt_ok:
     mov dl, BOX_L + 2
-    mov bl, 0Eh
-    mov si, str_sp
-    call printat
-    ;; SP Current
-    mov di, [data_off]
-    add di, 0x035
-    mov es, [data_seg]
-    fld dword [es:di]
-    fistp dword [sp_tmp]
-    mov ax, [sp_tmp]
-    mov dx, [sp_tmp+2]
-    mov di, numbuf
-    call u32_to_dec
-    mov dh, 3
-    mov dl, BOX_L + 6
     mov bl, 0Fh
-    mov si, numbuf
-    call printat
-    ;; Separator '/'
-    mov si, numbuf
-    xor bx, bx
-.splen1:
-    cmp byte [si+bx], 0
-    je .splen1d
-    inc bx
-    jmp .splen1
-.splen1d:
-    mov dl, BOX_L + 6
-    add dl, bl
-    mov al, '/'
-    mov bl, 07h
-    call putch_at
-    inc dl
-    ;; SP Max
-    push dx
-    mov di, [data_off]
-    add di, 0x039
-    mov es, [data_seg]
-    fld dword [es:di]
-    fistp dword [sp_tmp]
-    mov ax, [sp_tmp]
-    mov dx, [sp_tmp+2]
-    mov di, numbuf
-    call u32_to_dec
-    pop dx
-    mov bl, 0Fh
-    mov si, numbuf
     call printat
     ;; Row 4: separator
     mov dh, 4
@@ -886,7 +900,13 @@ draw_spell_page:
     call putch_at
     mov dl, BOX_L + 1
     mov bl, 07h
+    cmp byte [grid_is_wand], 0
+    jne .use_whelp
     mov si, str_shelp
+    jmp .pr_shelp
+.use_whelp:
+    mov si, str_whelp
+.pr_shelp:
     call printat
     ;; Row 11: bottom
     mov dh, 11
@@ -939,7 +959,8 @@ draw_spell_grid:
     ;; Draw 30 dots
     movzx si, byte [fld_idx]
     shl si, 1
-    mov si, [spell_base + si]
+    add si, [grid_ptr]
+    mov si, [si]
     add si, [data_off]
     xor cx, cx
 .dcol:
@@ -964,32 +985,7 @@ draw_spell_grid:
     add bx, cx
     mov al, [es:bx]
     pop es
-    ;; Choose glyph and color
-    test al, al
-    jz .spell_off
-    mov al, 0FEh
-    mov bl, 0Ah
-    jmp .spell_draw
-.spell_off:
-    mov al, 0FAh
-    mov bl, 08h
-.spell_draw:
-    ;; Highlight if cursor is here
-    push cx
-    mov cl, [fld_idx]
-    cmp cl, [spell_row]
-    jne .no_hl
-    pop cx
-    push cx
-    cmp cl, [spell_col]
-    jne .no_hl
-    mov bl, 0Fh
-.no_hl:
-    pop cx
-    movzx bx, byte [fld_idx]
-    mov dh, SPELL_ROW
-    add dh, bl
-    ;; Recalc color (bl got clobbered)
+    ;; Read value and pick glyph/color
     push es
     mov es, [data_seg]
     push bx
@@ -998,12 +994,33 @@ draw_spell_grid:
     mov al, [es:bx]
     pop bx
     pop es
+    movzx bx, byte [fld_idx]
+    mov dh, SPELL_ROW
+    add dh, bl
+    cmp byte [grid_is_wand], 0
+    jne .wand_glyph
+    ;; Binary mode: dot or middle-dot
     test al, al
     jz .off2
     mov al, 0FEh
     mov bl, 0Ah
     jmp .hl2
 .off2:
+    mov al, 0FAh
+    mov bl, 08h
+    jmp .hl2
+.wand_glyph:
+    ;; Wand mode: show charge digit
+    test al, al
+    jz .wand_zero
+    add al, '0'
+    cmp al, '9'
+    jbe .wand_dig
+    mov al, '+'
+.wand_dig:
+    mov bl, 0Ah
+    jmp .hl2
+.wand_zero:
     mov al, 0FAh
     mov bl, 08h
 .hl2:
@@ -1036,11 +1053,14 @@ do_toggle_spell:
     push di
     movzx bx, byte [spell_row]
     shl bx, 1
-    mov di, [spell_base + bx]
+    add bx, [grid_ptr]
+    mov di, [bx]
     movzx bx, byte [spell_col]
     add di, bx
     add di, [data_off]
     mov es, [data_seg]
+    cmp byte [grid_is_wand], 0
+    jne .wand_inc
     mov al, [es:di]
     test al, al
     jnz .clr
@@ -1048,6 +1068,15 @@ do_toggle_spell:
     jmp .td
 .clr:
     mov byte [es:di], 0
+    jmp .td
+.wand_inc:
+    mov al, [es:di]
+    inc al
+    cmp al, 10
+    jb .wand_ok
+    xor al, al
+.wand_ok:
+    mov [es:di], al
 .td:
     pop di
     pop bx
@@ -1060,7 +1089,8 @@ set_type_all:
     push cx
     movzx bx, byte [spell_row]
     shl bx, 1
-    mov di, [spell_base + bx]
+    add bx, [grid_ptr]
+    mov di, [bx]
     add di, [data_off]
     mov es, [data_seg]
     mov cx, 30
@@ -1081,7 +1111,8 @@ clear_type_all:
     push cx
     movzx bx, byte [spell_row]
     shl bx, 1
-    mov di, [spell_base + bx]
+    add bx, [grid_ptr]
+    mov di, [bx]
     add di, [data_off]
     mov es, [data_seg]
     mov cx, 30
@@ -1925,4 +1956,4 @@ install:
     mov dx, (install - $$ + 0x100 + 15) >> 4
     int 21h
 banner: db 'Moraff Trainer loaded! Press TAB in-game.', 0Dh, 0Ah
-        db '  S=Spells E=Equipment A/N=all on/off', 0Dh, 0Ah, '$'
+        db '  S=Spells R=Scrolls W=Wands P=Papers E=Equip', 0Dh, 0Ah, '$'
