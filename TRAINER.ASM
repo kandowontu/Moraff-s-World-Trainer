@@ -33,7 +33,7 @@ EQ_ARM_ENCH equ 0x0B8
 EQ_NAME_COL equ 25
 EQ_OWN_COL  equ 44
 EQ_ENCH_END equ 52
-NFIELDS     equ 38
+NFIELDS     equ 40
 VIS_FIELDS  equ 20
 BOX_L       equ 20
 BOX_W       equ 40
@@ -68,7 +68,9 @@ fld_off:    dw 0x7A8              ; 0  Level
             dw 0x160              ; 34 Red Pill
             dw 0x161              ; 35 White Pill
             dw 0x162              ; 36 Yellow Pill
-fld_sz:     db 2, 2,2, 5,5, 4, 2,2,2, 2,2,2,2,2,2, 4,4, 4,4,4,4,4,4, 2, 1, 1, 1, 1, 1, 1, 1,1, 1,1,1,1,1, 1
+            dw 0x042              ; 37 FS Hit1 042
+            dw 0x81F              ; 38 FS Hit2 81F
+fld_sz:     db 2, 2,2, 5,5, 4, 2,2,2, 2,2,2,2,2,2, 4,4, 4,4,4,4,4,4, 2, 1, 1, 1, 1, 1, 1, 1,1, 1,1,1,1,1, 1, 1,1
 fld_name:   db 'Level         '
             db 'HP Current    '
             db 'HP Max        '
@@ -107,6 +109,8 @@ fld_name:   db 'Level         '
             db 'Red Pill      '
             db 'White Pill    '
             db 'Yellow Pill   '
+            db 'FS Hit1  042  '
+            db 'FS Hit2  81F  '
 spell_base: dw 0x177, 0x1A4, 0x1D1, 0x1FE
 spell_lbl:  db 'E', 'H', 'A', 'P'
 wep_name:   db 'Fist        '
@@ -749,6 +753,35 @@ draw_fields:
     inc byte [fld_idx]
     jmp .floop
 .fdone:
+    ;; Up arrow if scroll_top > 0
+    mov dh, FIELD_ROW
+    mov dl, BOX_L + BOX_W - 2
+    cmp byte [scroll_top], 0
+    je .no_up
+    mov al, 18h
+    mov bl, 0Eh
+    call putch_at
+    jmp .chk_dn
+.no_up:
+    mov al, ' '
+    mov bl, 07h
+    call putch_at
+.chk_dn:
+    ;; Down arrow if more fields below
+    mov dh, FIELD_ROW + VIS_FIELDS - 1
+    mov al, [scroll_top]
+    add al, VIS_FIELDS
+    cmp al, NFIELDS
+    jae .no_dn
+    mov al, 19h
+    mov bl, 0Eh
+    call putch_at
+    jmp .arrows_done
+.no_dn:
+    mov al, ' '
+    mov bl, 07h
+    call putch_at
+.arrows_done:
     pop ds
     pop es
     popa
